@@ -6,6 +6,7 @@ import os
 
 from dotenv import load_dotenv
 from exceptions import TokenError
+from json import JSONDecodeError
 from logging.handlers import RotatingFileHandler
 from http import HTTPStatus
 
@@ -34,33 +35,52 @@ logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-handler = RotatingFileHandler('homework.log', maxBytes=50000000, backupCount=5)
+handler = RotatingFileHandler(
+    os.path.expanduser('~/Projects/homework_bot/homework.log'),
+    maxBytes=50000000,
+    backupCount=5
+)
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 
 def send_message(bot, message):
     """Отправляет сообщение в Telegram чат."""
-    bot.send_message(TELEGRAM_CHAT_ID, message)
-    logger.info('Бот отправил сообщение: '
-                f'{message}')
+    try:
+        bot.send_message(TELEGRAM_CHAT_ID, message)
+        logger.info('Бот отправил сообщение: '
+                    f'{message}')
+    except SystemError('Ошибка отправки сообщения'):
+        logger.error('Ошибка отправки сообщения')
 
 
 def get_api_answer(current_timestamp):
     """Делает запрос к эндпоинту API-сервиса."""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
-    response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    if response.status_code == HTTPStatus.OK:
-        logger.info(f'Запрос получен. Статус ответа: {response.status_code}')
-        return response.json()
-    else:
-        message = ('Сбой в работе программы: '
-                   f'Эндпоинт {ENDPOINT} недоступен. '
-                   f'Код ответа API: {response.status_code}')
-        logger.error(message)
-        # send_message(bot, message)
-        raise response.raise_for_status()
+    try:
+        response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+        if response.status_code == HTTPStatus.OK:
+            logger.info(
+                f'Запрос получен. Статус ответа: {response.status_code}'
+            )
+            clear_response = response.json()
+            if 'error' in clear_response:
+                message = clear_response.get('error')
+                logger.error(
+                    f"Ошибка формата ответа сервера {message}"
+                )
+                raise SystemError('Ошибка формата ответа сервера')
+            else:
+                return clear_response
+        else:
+            message = ('Сбой в работе программы: '
+                       f'Эндпоинт {ENDPOINT} недоступен. '
+                       f'Код ответа API: {response.status_code}')
+            logger.error(message)
+            raise response.raise_for_status()
+    except JSONDecodeError:
+        logger.error('Ошибка декодирования JSON')
 
 
 def check_response(response):
@@ -72,12 +92,10 @@ def check_response(response):
         else:
             error = f'Тип данных {type(homeworks).__name__} не список'
             logger.error(error)
-            # send_message(bot, error)
             raise TypeError(error)
     else:
         error = f'Тип данных {type(response).__name__} не словарь'
         logger.error(error)
-        # send_message(bot, error)
         raise TypeError(error)
 
 
@@ -100,17 +118,19 @@ def parse_status(homework):
         logger.error(error)
         raise KeyError(error)
 
-        # error = StatusError()
-        # logger.error(error)
-        # send_message(bot, error)
-        # raise error
-
 
 def check_tokens():
     """Проверяет доступность переменных окружения."""
-    token_list = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
-    for token in token_list:
+    token_dict = {
+        'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
+        'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
+        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
+    }
+    for name, token in token_dict.items():
         if not token:
+            message = ('Отсутствует обязательная переменная окружения: '
+                       f'{name}. Программа принудительно остановлена.')
+            logger.critical(message)
             return False
     return True
 
