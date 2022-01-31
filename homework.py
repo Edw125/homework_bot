@@ -36,7 +36,7 @@ formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 handler = RotatingFileHandler(
-    os.path.expanduser('~/Projects/homework_bot/homework.log'),
+    os.path.expanduser('~/homework.log'),
     maxBytes=50000000,
     backupCount=5
 )
